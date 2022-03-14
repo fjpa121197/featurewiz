@@ -54,7 +54,6 @@ warnings.warn = warn
 import logging
 ####################################################################################
 import re
-import pdb
 import pprint
 from itertools import cycle, combinations
 from collections import defaultdict, OrderedDict
@@ -74,7 +73,6 @@ from dask.distributed import Client, progress
 import psutil
 import json
 from sklearn.model_selection import train_test_split
-
 #######################################################################################################
 def classify_features(dfte, depVar, verbose=0):
     dfte = copy.deepcopy(dfte)
@@ -480,13 +478,12 @@ def load_dask_data(filename, sep, ):
     ts_column as a Time Series index. Note that filename should contain the full
     path to the file.
     """
-    n_workers = get_cpu_worker_count()
     if isinstance(filename, str):
-            dft = dd.read_csv(filename, blocksize='default')
-            print('    Too big to fit into pandas. Hence loaded file %s into a Dask dataframe ...' % filename)
+        dft = dd.read_csv(filename, blocksize='default')
+        print('    Too big to fit into pandas. Hence loaded file %s into a Dask dataframe ...' % filename)
     else:
         ### If filename is not a string, it must be a dataframe and can be loaded
-        dft =   dd.from_pandas(filename, npartitions=n_workers)
+        dft =   dd.from_pandas(filename, npartitions=1)
         print('    Converted pandas dataframe into a Dask dataframe ...' )
     return dft
 ##################################################################################
@@ -656,7 +653,6 @@ def FE_remove_variables_using_SULOV_method(df, numvars, modeltype, target,
         ##### you must ensure there are no infinite nor null values in corr_list df ##
         df_fit = df[corr_list]
         ### Now check if there are any NaN values in the dataset #####
-        
         if df_fit.isnull().sum().sum() > 0:
             df_fit = df_fit.dropna()
         else:
@@ -666,12 +662,11 @@ def FE_remove_variables_using_SULOV_method(df, numvars, modeltype, target,
             df_fit = reduce_mem_usage(df_fit)
         except:
             print('Reduce memeory erroring. Continuing...')
-        ##### Ready to perform fit and find mutual information score ####
-        
+        ##### Ready to perform fit and find mutual information score ####       
         try:
             fs.fit(df_fit, df[target])
         except:
-            print('SelectKBest() function is erroring. Returning with all variables...')
+            print('Select K Best erroring. Returning with all variables...')
             return corr_list
         ##########################################################################
         try:
@@ -947,13 +942,16 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
         3. testm: modified test dataframe is the dataframe that is modified with
                     engineered and selected features from test_data
     """
+
     print('############################################################################################')
     print('############       F A S T   F E A T U R E  E N G G    A N D    S E L E C T I O N ! ########')
     print("# Be judicious with featurewiz. Don't use it to create too many un-interpretable features! #")
     print('############################################################################################')
+    
     if not nrows is None:
         print('ALERT: nrows=%s. Hence featurewiz will randomly sample that many rows.' %nrows)
         print('    Change nrows=None if you want all rows...')
+
     ### set all the defaults here ##############################################
     dataname = copy.deepcopy(dataname)
     max_nums = 30
@@ -981,6 +979,7 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     ######################################################################################
     feature_generators = ['interactions', 'groupby', 'target']
     feature_gen = ''
+
     if feature_engg:
         if isinstance(feature_engg, str):
             feature_gen = [feature_engg]
@@ -1002,31 +1001,25 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     ##########   dataname will be the name of the pandas version of train data      ######
     ##########           train will be the Dask version of train data               ######
     ######################################################################################
-    print('**INFO: featurewiz can now read feather formatted files. Loading train data...')
+
+    print('Loading train data...')
     if isinstance(dataname, str):
         #### This is where we get a filename as a string as an input #################
-        if re.search(r'(.ftr)', dataname) or re.search(r'(.feather)', dataname):
-            print("""**INFO: Feather format allowed. Loading feather formatted file...**""")
-            import feather
-            dataname = pd.read_feather(dataname, use_threads=True)
-            train = load_dask_data(dataname, sep)
+        if dask_xgboost_flag:
+            try:
+                print('    Since dask_xgboost_flag is True, reducing memory size and loading into dask')
+                dataname = pd.read_csv(dataname, sep=sep, header=header, nrows=nrows)
+                dataname = reduce_mem_usage(dataname)
+                train = load_dask_data(dataname, sep)
+            except:
+                print('File could not be loaded into dask. Check the path or filename and try again')
+                return None
         else:
-            print("""**INFO: to increase file loading performance, convert huge `csv` files to `feather` format""")
-            print("""**INFO: Use `df.reset_index(drop=True).to_feather("path/to/save/file.ftr")` to save file in feather format**""")
-            if dask_xgboost_flag:
-                try:
-                    print('    Since dask_xgboost_flag is True, reducing memory size and loading into dask')
-                    dataname = pd.read_csv(dataname, sep=sep, header=header, nrows=nrows)
-                    dataname = reduce_mem_usage(dataname)
-                    train = load_dask_data(dataname, sep)
-                except:
-                    print('File could not be loaded into dask. Check the path or filename and try again')
-                    return None
-            else:
-                train = load_file_dataframe(dataname, sep=sep, header=header, verbose=verbose, nrows=nrows)
-                dataname = reduce_mem_usage(train)
+            train = load_file_dataframe(dataname, sep=sep, header=header, verbose=verbose, nrows=nrows)
+            dataname = pd.read_csv(dataname, sep=sep, header=header, nrows=nrows)
     else:
         #### This is where we get a dataframe as an input #################
+        
         if dask_xgboost_flag:
             if not nrows is None:
                 dataname = dataname.sample(n=nrows, replace=True, random_state=9999)
@@ -1042,7 +1035,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     dataname = remove_duplicate_cols_in_dataset(dataname)
     #### Save the original column names ############################
     orig_col_names = dataname.columns.tolist()
-    
     dataname = remove_special_chars_in_names(dataname, target, verbose=1)
     new_col_names = dataname.columns.tolist()
     col_name_mapper = dict(zip(new_col_names,orig_col_names))
@@ -1050,7 +1042,7 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     if dask_xgboost_flag:
         train = remove_special_chars_in_names(train, target)
     train_index = dataname.index
-
+    
     ######################################################################################
     ##################    L O A D      T E S T     D A T A   #############################
     ##########   test_data will be the name of the pandas version of test data      #####
@@ -1058,29 +1050,21 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     ######################################################################################
     if isinstance(test_data, str):
         if test_data != '':
-            if re.search(r'(.ftr)', test_data):
-                print("""**INFO: Feather format allowed. Loading feather file...**""")
-                import feather
-                test_data = pd.read_feather(test_data, use_threads=True)
-                test = load_dask_data(test_data, sep)
+            ### only if test_data is a filename load this #####
+            print('Loading test data filename = %s...' %test_data)
+            if dask_xgboost_flag:
+                print('    Since dask_xgboost_flag is True, reducing memory size and loading into dask')
+                ### nrows does not apply to test data in the case of featurewiz ###############
+                test_data = load_file_dataframe(test_data, sep=sep, header=header, verbose=verbose, nrows=None)
+                ### sometimes, test_data returns None if there is an error. ##########
+                if test_data is not None:
+                    test_data = reduce_mem_usage(test_data)
+                    ### test_data is the pandas dataframe object and test is dask dataframe object ##
+                    test = load_dask_data(test_data, sep)
             else:
-                print("""**INFO: to increase file loading performance, convert huge `csv` files to `feather` format using `df.to_feather("path/to/save/file.feather")`**""")
-                print('**INFO: featurewiz can now read feather formatted files...***')
-                ### only if test_data is a filename load this #####
-                print('Loading test data filename = %s...' %test_data)
-                if dask_xgboost_flag:
-                    print('    Since dask_xgboost_flag is True, reducing memory size and loading into dask')
-                    ### nrows does not apply to test data in the case of featurewiz ###############
-                    test_data = load_file_dataframe(test_data, sep=sep, header=header, verbose=verbose, nrows=None)
-                    ### sometimes, test_data returns None if there is an error. ##########
-                    if test_data is not None:
-                        test_data = reduce_mem_usage(test_data)
-                        ### test_data is the pandas dataframe object and test is dask dataframe object ##
-                        test = load_dask_data(test_data, sep)
-                else:
-                    #### load the entire test dataframe - there is no limit applicable there #########
-                    test_data = load_file_dataframe(test_data, sep=sep, header=header, verbose=verbose)
-                    test = copy.deepcopy(test_data)
+                #### load the entire test dataframe - there is no limit applicable there #########
+                test_data = load_file_dataframe(test_data, sep=sep, header=header, verbose=verbose)
+                test = copy.deepcopy(test_data)
         else:
             print('No test data filename given...')
             test_data = None
@@ -1157,14 +1141,11 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     #########     G P U     P R O C E S S I N G      B E G I N S    ############
     ###### This is where we set the CPU and GPU parameters for XGBoost
     GPU_exists = check_if_GPU_exists()
-    n_workers = get_cpu_worker_count()
     #####   Set the Scoring Parameters here based on each model and preferences of user ###
     cpu_params = {}
     param = {}
-    cpu_tree_method = 'hist'
-    tree_method = 'hist'
     cpu_params['nthread'] = -1
-    cpu_params['tree_method'] = tree_method
+    cpu_params['tree_method'] = 'hist'
     cpu_params['eta'] = 0.01
     cpu_params['subsample'] = 0.5
     cpu_params['grow_policy'] = 'depthwise' #'lossguide'
@@ -1176,9 +1157,8 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     cpu_params['predictor'] = 'cpu_predictor'
     cpu_params['num_parallel_tree'] = 1
     if GPU_exists:
-        tree_method = 'gpu_hist'
         param['nthread'] = -1
-        param['tree_method'] = tree_method
+        param['tree_method'] = 'gpu_hist'
         param['eta'] = 0.01
         param['subsample'] = 0.5
         param['grow_policy'] = 'depthwise' # 'lossguide' # 
@@ -1196,7 +1176,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     #################################################################################
     #############   D E T E C T  SINGLE OR MULTI-LABEL PROBLEM      #################
     #################################################################################
-    
     if isinstance(target, str):
         target = [target]
         settings.multi_label = False
@@ -1221,12 +1200,10 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
         date_time_vars = features_dict['date_vars']
         date_cols = copy.deepcopy(date_time_vars)
         #### Do this only if date time columns exist in your data set!
-        date_col_mappers = {}
         for date_col in date_cols:
             print('Processing %s column for date time features....' %date_col)
             dataname, ts_adds = FE_create_time_series_features(dataname, date_col)
-            date_col_mapper = dict([(x,date_col) for x in ts_adds])
-            date_col_mappers.update(date_col_mapper)
+            #date_col_adds_train = left_subtract(date_df_train.columns.tolist(),date_col)
             #print('    Adding %d column(s) from date-time column %s in train' %(len(date_col_adds_train),date_col))
             #train = train.join(date_df_train, rsuffix='2')
             if isinstance(test_data,str) or test_data is None:
@@ -1309,16 +1286,16 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
             for each_target in copy_targets:
                 if cat_targets or sorted(np.unique(dataname[each_target].values))[0] != 0:
                     mlb = My_LabelEncoder()
-                    dataname[each_target] = mlb.fit_transform(dataname[each_target])
+                    dataname[each_target] = mlb.fit_transform(dataname[each_target]).values
                     try:
                         ## try converting the pandas target to dask target ###
-                        train[each_target] = dd.from_pandas(dataname[each_target], npartitions=n_workers)
+                        train[each_target] = dd.from_pandas(dataname[each_target], npartitions=1)
                     except:
                         print('Could not convert dask dataframe target into numeric. Check your input. Continuing...')
                     if test_data is not None:
                         test_data[each_target] = mlb.transform(test_data[each_target])
                         try:
-                            test[each_target] = dd.from_pandas(test_data[each_target], npartitions=n_workers)
+                            test[each_target] = dd.from_pandas(test_data[each_target], npartitions=1)
                         except:
                             print('Could not convert dask dataframe target into numeric. Check your input. Continuing...')
                     print('Completed label encoding of target variable = %s' %each_target)
@@ -1326,7 +1303,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     ######################################################################################
     ######    B E F O R E    U S I N G    D A T A B U N C H  C H E C K ###################
     ######################################################################################
-    
     ## Before using DataBunch check if certain encoders work with certain kind of data!
     if feature_type:
         final_cat_encoders = feature_type
@@ -1490,9 +1466,15 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     preds = final_list+important_cats
     print('Final list of selected vars after SULOV = %s' %len(preds))
     #######You must convert category variables into integers ###############
-    
     if len(important_cats) > 0:
         dataname, test_data = FE_convert_all_object_columns_to_numeric(dataname,  test_data)
+
+    return preds, dataname[preds + target]
+
+
+
+
+        
     print('############## F E A T U R E   S E L E C T I O N  ####################')
     important_features = []
     #######################################################################
@@ -1536,8 +1518,7 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
         #from dask_ml.model_selection import train_test_split
         ### check available memory and allocate at least 1GB of it in the Client in DASK #############################
         n_workers = get_cpu_worker_count()
-        ### Avoid reducing the free memory - leave it as big as it wants to be ###
-        memory_free = str(max(1, int(psutil.virtual_memory()[0]/(1*1e9))))+'GB'
+        memory_free = str(max(1, int(psutil.virtual_memory()[0]/(n_workers*1e9))))+'GB'
         print('    Using Dask XGBoost algorithm with %s virtual CPUs and %s memory limit...' %(get_cpu_worker_count(), memory_free))
         client = Client(n_workers= n_workers, threads_per_worker=1, processes=True, silence_logs=50,
                         memory_limit=memory_free)
@@ -1587,7 +1568,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
             if settings.modeltype == 'Regression':
                 objective = 'reg:squarederror'
                 params = {'objective': objective, 
-                                'tree_method': tree_method,
                                    "silent":True, "verbosity": 0, 'min_child_weight': 0.5}
             else:
                 #### This is for Classifiers only ##########                    
@@ -1595,15 +1575,12 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
                     objective = 'binary:logistic'
                     num_class = 1
                     params = {'objective': objective, 'num_class': num_class,
-                                'tree_method': tree_method,
                                     "silent":True,  "verbosity": 0,  'min_child_weight': 0.5}
                 else:
                     objective = 'multi:softmax'
                     num_class  =  dataname[target].nunique()[0]
-                    # Use GPU training algorithm if needed
                     params = {'objective': objective, 
-                                'tree_method': tree_method,
-                                "silent":True, "verbosity": 0,   'min_child_weight': 0.5, 'num_class': num_class}
+                                    "silent":True, "verbosity": 0,   'min_child_weight': 0.5, 'num_class': num_class}
             ############################################################################################################
             ######### This is where we find out whether to use single or multi-label for xgboost #######################
             ############################################################################################################
@@ -1640,11 +1617,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
                         #### SYNTAX BELOW WORKS WELL. BUT YOU CANNOT DO EVALS WITH DASK XGBOOST AS OF NOW ####
                         bst = xgb.dask.train(client, params, dtrain, num_boost_round=num_rounds)
                     except Exception as error_msg:
-                        if settings.modeltype == 'Regression':
-                            params = {'tree_method': cpu_tree_method}
-                        else:
-                            params = {'tree_method': cpu_tree_method,'num_class': num_class}
-                        bst = xgb.dask.train(client, params, dtrain, num_boost_round=num_rounds)
                         print(error_msg)
             ################################################################################
             if not dask_xgboost_flag:
@@ -1719,10 +1691,6 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
             important_features2 = copy.deepcopy(important_features)
             print('    Could not revert column names to original. Try replacing them manually.')
         print(f'Returning list of {len(important_features)} important features and a dataframe.')
-        if len(date_cols) > 0:
-            date_replacer = date_col_mappers.get  # For faster gets.
-            important_features1 = [date_replacer(n, n) for n in important_features2]
-            important_features2 = find_remove_duplicates(important_features1)
         if len(np.intersect1d(train_ids.columns.tolist(),dataname.columns.tolist())) > 0:
             return important_features2, dataname[important_features+target]
         else:
@@ -2957,7 +2925,6 @@ def FE_find_and_cap_outliers(df, features, drop=False, verbose=False):
 #################################################################################
 import pandas as pd
 import numpy as np
-import pdb
 from sklearn.utils.validation import check_X_y, check_is_fitted
 from sklearn.preprocessing import LabelEncoder
 from collections import Counter, defaultdict
@@ -3609,7 +3576,6 @@ class FeatureWiz(BaseEstimator, TransformerMixin):
             return {}, {}
         ###### This helps find all the predictor variables 
         cols = X.columns.tolist()
-
         #### Send target variable as it is so that y_train is analyzed properly ###
         # Select features using featurewiz
         features, X_sel = featurewiz(df, target, self.corr_limit, self.verbose, self.sep, 
