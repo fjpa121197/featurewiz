@@ -14,7 +14,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     license='Apache License 2.0',
-    url="https://github.com/AutoViML/featurewiz",
+    url="https://github.com/fjpa121197/featurewiz",
     packages=setuptools.find_packages(exclude=("tests",)),
     install_requires=[
         "ipython",
