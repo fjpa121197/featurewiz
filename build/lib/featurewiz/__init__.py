@@ -33,6 +33,8 @@ if __name__ == "__main__":
 else:
     module_type = 'Imported'
 version_number = __version__
+
+print("THIS IS A CUSTOM VERSION!!!!")
 print("""%s featurewiz. Version = %s. nrows=None uses all rows. Set nrows=1000 to randomly sample 1000 rows.
 outputs = featurewiz(dataname, target, corr_limit=0.70, verbose=2, sep=',', 
 		header=0, test_data='',feature_engg='', category_encoders='',
