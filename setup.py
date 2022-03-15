@@ -33,7 +33,7 @@ setuptools.setup(
         "lightgbm>=3.0.0",
         "distributed>=2021.11.0",
         "feather-format>=0.4.1",
-        "pyarrow==7.0.0",
+        "pyarrow",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
