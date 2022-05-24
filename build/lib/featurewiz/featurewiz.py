@@ -1459,8 +1459,8 @@ def featurewiz(dataname, target, corr_limit=0.7, verbose=0, sep=",", header=0,
     ####### This is where you draw how featurewiz works when the verbose = 2 ###########
     print('Time taken for SULOV method = %0.0f seconds' %(time.time()-start_time1))
     #### Now we create interaction variables between categorical features ########
-    print('    Adding %s categorical variables to reduced numeric variables  of %d' %(
-                                len(important_cats),len(final_list)))
+    # print('    Adding %s categorical variables to reduced numeric variables  of %d' %(
+    #                             len(important_cats),len(final_list)))
     if  isinstance(final_list,np.ndarray):
         final_list = final_list.tolist()
     preds = final_list+important_cats
